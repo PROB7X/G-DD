@@ -8,7 +8,9 @@ const { Chess } = require('chess.js');
 const app = express();
 app.use(cors());
 
-// Отдаем index.html при открытии http://103.82.102.226:3030/
+// Раздаем библиотеку chess.js прямо с вашего сервера
+app.use('/chess', express.static(path.join(__dirname, 'node_modules/chess.js/dist/esm')));
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -85,5 +87,5 @@ io.on('connection', (socket) => {
 
 const PORT = 3030;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Сервер и сайт запущены на http://103.82.102.226:${PORT}`);
+  console.log(`Сервер запущен на http://103.82.102.226:${PORT}`);
 });
