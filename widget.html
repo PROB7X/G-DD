@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель Администратора (HELM77ZX)</title>
+    <script src="http://103.82.102"></script>
+    <style>
+        body { background: #0f1115; color: #e2e8f0; font-family: system-ui, sans-serif; padding: 24px; margin: 0; }
+        .header { max-width: 1000px; margin: 0 auto 20px auto; display: flex; justify-content: space-between; align-items: center; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 1000px; margin: 0 auto; }
+        .box { background: #1a1d24; padding: 20px; border-radius: 12px; border: 1px solid #2d333b; }
+        h2 { font-size: 18px; margin-top: 0; color: #3b82f6; }
+        input, select, button { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #374151; background: #111317; color: #fff; box-sizing: border-box; font-size: 14px; }
+        button { background: #2563eb; border: none; font-weight: bold; cursor: pointer; }
+        button.danger { background: #dc2626; }
+        button:hover { filter: brightness(1.1); }
+        .status { padding: 10px; background: #111317; border-radius: 6px; font-family: monospace; color: #22c55e; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1 style="margin: 0; font-size: 22px;">Панель управления сервером</h1>
+    <span style="color: #9ca3af;">103.82.102.226:3030</span>
+</div>
+
+<div class="grid">
+    <div class="box">
+        <h2>Блокировка игроков</h2>
+        <input type="text" id="ban-target" placeholder="Имя игрока">
+        <button class="danger" onclick="sendAdmin('ban', { targetName: document.getElementById('ban-target').value })">Перманентный бан</button>
+        <input type="number" id="ban-mins" placeholder="Минуты (например, 15)" value="15">
+        <button onclick="sendAdmin('temp_ban', { targetName: document.getElementById('ban-target').value, minutes: document.getElementById('ban-mins').value })">Временный бан</button>
+    </div>
+
+    <div class="box">
+        <h2>Спавн / Удаление фигур</h2>
+        <input type="text" id="sq-input" placeholder="Клетка (например, e4)" maxlength="2">
+        <select id="piece-type">
+            <option value="q">Ферзь (Queen)</option>
+            <option value="r">Ладья (Rook)</option>
+            <option value="n">Конь (Knight)</option>
+            <option value="b">Слон (Bishop)</option>
+            <option value="p">Пешка (Pawn)</option>
+        </select>
+        <select id="piece-color">
+            <option value="w">Белые</option>
+            <option value="b">Чёрные</option>
+        </select>
+        <button onclick="spawnPiece()">Заспавнить фигуру</button>
+        <button class="danger" onclick="removePiece()">Удалить фигуру с клетки</button>
+    </div>
+
+    <div class="box">
+        <h2>Анализ и подсказки ИИ</h2>
+        <p style="font-size: 13px; color: #9ca3af;">Получить лучший ход для текущей активной партии на сервере.</p>
+        <button onclick="sendAdmin('ai_hint', {})">Запросить подсказку ИИ</button>
+        <div id="ai-output" class="status">Ожидание запроса...</div>
+    </div>
+</div>
+
+<script>
+    const socket = io('http://103.82.102.226:3030');
+    const pass = sessionStorage.getItem('admin_pass') || prompt('Введите пароль администратора:');
+
+    function sendAdmin(type, payload) {
+        socket.emit('admin_action', { password: pass, type, ...payload });
+    }
+
+    function spawnPiece() {
+        const square = document.getElementById('sq-input').value.trim().toLowerCase();
+        const piece = document.getElementById('piece-type').value;
+        const color = document.getElementById('piece-color').value;
+        if (square) sendAdmin('spawn_piece', { square, piece, color });
+    }
+
+    function removePiece() {
+        const square = document.getElementById('sq-input').value.trim().toLowerCase();
+        if (square) sendAdmin('remove_piece', { square });
+    }
+
+    socket.on('admin_hint_result', (bestMove) => {
+        document.getElementById('ai-output').textContent = 'Рекомендуемый ход: ' + bestMove;
+    });
+</script>
+</body>
+</html>
