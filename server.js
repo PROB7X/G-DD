@@ -10,7 +10,7 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // Разрешаем запросы с GitHub Pages
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -18,26 +18,28 @@ const io = new Server(server, {
 const rooms = new Map();
 
 io.on('connection', (socket) => {
-  console.log(`Подключился игрок: ${socket.id}`);
-
-  socket.on('joinRoom', (roomId) => {
+  socket.on('joinRoom', ({ roomId, nickname }) => {
     socket.join(roomId);
+    const playerName = nickname || 'Игрок';
     
     if (!rooms.has(roomId)) {
       rooms.set(roomId, {
         chess: new Chess(),
-        players: { w: socket.id, b: null }
+        players: {
+          w: { id: socket.id, name: playerName },
+          b: null
+        }
       });
-      socket.emit('playerColor', 'w');
+      socket.emit('playerColor', { color: 'w', players: rooms.get(roomId).players });
     } else {
       const room = rooms.get(roomId);
-      if (!room.players.b && room.players.w !== socket.id) {
-        room.players.b = socket.id;
-        socket.emit('playerColor', 'b');
-        io.to(roomId).emit('gameStart', room.chess.fen());
+      if (!room.players.b && room.players.w?.id !== socket.id) {
+        room.players.b = { id: socket.id, name: playerName };
+        socket.emit('playerColor', { color: 'b', players: room.players });
+        io.to(roomId).emit('gameStart', { fen: room.chess.fen(), players: room.players });
       } else {
-        socket.emit('playerColor', 'spectator');
-        socket.emit('syncBoard', room.chess.fen());
+        socket.emit('playerColor', { color: 'spectator', players: room.players });
+        socket.emit('syncBoard', { fen: room.chess.fen(), players: room.players });
       }
     }
   });
@@ -47,38 +49,30 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     const turn = room.chess.turn();
-    if ((turn === 'w' && room.players.w !== socket.id) || 
-        (turn === 'b' && room.players.b !== socket.id)) {
-      return; // Не ваш ход
+    if ((turn === 'w' && room.players.w?.id !== socket.id) || 
+        (turn === 'b' && room.players.b?.id !== socket.id)) {
+      return;
     }
 
     try {
       const result = room.chess.move(move);
       if (result) {
-        io.to(roomId).emit('moveMade', {
-          fen: room.chess.fen(),
-          gameOver: room.chess.isGameOver(),
-          inCheck: room.chess.inCheck(),
-          turn: room.chess.turn()
-        });
+        io.to(roomId).emit('moveMade', { fen: room.chess.fen() });
       }
-    } catch (e) {
-      // Некорректный ход игнорируется
-    }
+    } catch (e) {}
   });
 
   socket.on('resetGame', (roomId) => {
     const room = rooms.get(roomId);
-    if (room && (room.players.w === socket.id || room.players.b === socket.id)) {
+    if (room && (room.players.w?.id === socket.id || room.players.b?.id === socket.id)) {
       room.chess.reset();
-      io.to(roomId).emit('syncBoard', room.chess.fen());
+      io.to(roomId).emit('syncBoard', { fen: room.chess.fen(), players: room.players });
     }
   });
 
   socket.on('disconnect', () => {
-    console.log(`Отключился игрок: ${socket.id}`);
     rooms.forEach((room, roomId) => {
-      if (room.players.w === socket.id || room.players.b === socket.id) {
+      if (room.players.w?.id === socket.id || room.players.b?.id === socket.id) {
         io.to(roomId).emit('playerDisconnected');
         rooms.delete(roomId);
       }
