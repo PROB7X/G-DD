@@ -7,8 +7,6 @@ const { Chess } = require('chess.js');
 
 const app = express();
 app.use(cors());
-
-// Раздаем библиотеку chess.js прямо с вашего сервера
 app.use('/chess', express.static(path.join(__dirname, 'node_modules/chess.js/dist/esm')));
 
 app.get('/', (req, res) => {
@@ -20,42 +18,52 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+let waitingPlayer = null;
 const rooms = new Map();
 
 io.on('connection', (socket) => {
-  socket.on('joinRoom', ({ roomId, nickname }) => {
-    socket.join(roomId);
+  // Поиск соперника
+  socket.on('findMatch', ({ nickname }) => {
     const playerName = nickname || 'Игрок';
-    
-    if (!rooms.has(roomId)) {
-      rooms.set(roomId, {
-        chess: new Chess(),
-        players: {
-          w: { id: socket.id, name: playerName },
-          b: null
-        }
-      });
-      socket.emit('playerColor', { color: 'w', players: rooms.get(roomId).players });
+
+    if (waitingPlayer && waitingPlayer.id !== socket.id) {
+      const opponent = waitingPlayer;
+      waitingPlayer = null;
+
+      const roomId = `match_${opponent.id}_${socket.id}`;
+      socket.join(roomId);
+      opponent.socket.join(roomId);
+
+      const players = {
+        w: { id: opponent.id, name: opponent.name },
+        b: { id: socket.id, name: playerName }
+      };
+
+      const chess = new Chess();
+      rooms.set(roomId, { chess, players });
+
+      opponent.socket.emit('matchFound', { roomId, color: 'w', players, fen: chess.fen() });
+      socket.emit('matchFound', { roomId, color: 'b', players, fen: chess.fen() });
     } else {
-      const room = rooms.get(roomId);
-      if (!room.players.b && room.players.w?.id !== socket.id) {
-        room.players.b = { id: socket.id, name: playerName };
-        socket.emit('playerColor', { color: 'b', players: room.players });
-        io.to(roomId).emit('gameStart', { fen: room.chess.fen(), players: room.players });
-      } else {
-        socket.emit('playerColor', { color: 'spectator', players: room.players });
-        socket.emit('syncBoard', { fen: room.chess.fen(), players: room.players });
-      }
+      waitingPlayer = { id: socket.id, name: playerName, socket };
     }
   });
 
+  // Отмена поиска
+  socket.on('cancelSearch', () => {
+    if (waitingPlayer && waitingPlayer.id === socket.id) {
+      waitingPlayer = null;
+    }
+  });
+
+  // Ход игрока
   socket.on('makeMove', ({ roomId, move }) => {
     const room = rooms.get(roomId);
     if (!room) return;
 
     const turn = room.chess.turn();
-    if ((turn === 'w' && room.players.w?.id !== socket.id) || 
-        (turn === 'b' && room.players.b?.id !== socket.id)) {
+    if ((turn === 'w' && room.players.w.id !== socket.id) || 
+        (turn === 'b' && room.players.b.id !== socket.id)) {
       return;
     }
 
@@ -67,22 +75,28 @@ io.on('connection', (socket) => {
     } catch (e) {}
   });
 
-  socket.on('resetGame', (roomId) => {
-    const room = rooms.get(roomId);
-    if (room && (room.players.w?.id === socket.id || room.players.b?.id === socket.id)) {
-      room.chess.reset();
-      io.to(roomId).emit('syncBoard', { fen: room.chess.fen(), players: room.players });
-    }
+  // Выход из игры
+  socket.on('leaveMatch', (roomId) => {
+    handleLeave(socket, roomId);
   });
 
   socket.on('disconnect', () => {
+    if (waitingPlayer && waitingPlayer.id === socket.id) {
+      waitingPlayer = null;
+    }
     rooms.forEach((room, roomId) => {
-      if (room.players.w?.id === socket.id || room.players.b?.id === socket.id) {
-        io.to(roomId).emit('playerDisconnected');
-        rooms.delete(roomId);
+      if (room.players.w.id === socket.id || room.players.b.id === socket.id) {
+        handleLeave(socket, roomId);
       }
     });
   });
+
+  function handleLeave(sock, roomId) {
+    if (rooms.has(roomId)) {
+      sock.to(roomId).emit('opponentLeft');
+      rooms.delete(roomId);
+    }
+  }
 });
 
 const PORT = 3030;
