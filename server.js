@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { Chess } = require('chess.js');
@@ -7,12 +8,14 @@ const { Chess } = require('chess.js');
 const app = express();
 app.use(cors());
 
+// Отдаем index.html при открытии http://103.82.102.226:3030/
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 const rooms = new Map();
@@ -82,5 +85,5 @@ io.on('connection', (socket) => {
 
 const PORT = 3030;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Шахматный сервер запущен на порту ${PORT}`);
+  console.log(`Сервер и сайт запущены на http://103.82.102.226:${PORT}`);
 });
