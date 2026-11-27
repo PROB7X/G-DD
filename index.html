@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Онлайн Шахматы</title>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cloudflare.com"></script>
   <style>
     :root {
       --bg-color: #121214;
@@ -91,7 +90,7 @@
   </div>
 
   <div id="game-container">
-    <div id="status-bar">Подключение к серверу...</div>
+    <div id="status-bar">Подключение...</div>
     <div class="player-info">
       <span id="top-player">Соперник: ожидание...</span>
       <span id="top-color">Черные</span>
@@ -105,26 +104,26 @@
       <button id="reset-btn" onclick="resetGame()" class="btn btn-small">Новая игра</button>
     </div>
   </div>
-  <script>
-    const fsOverlay = document.getElementById('fs-overlay');
-    let fsDeclined = false;
+  <script type="module">
+    import { Chess } from '/chess/chess.js';
 
-    function enterFullscreen() {
+    let fsDeclined = false;
+    window.enterFullscreen = function() {
       fsDeclined = false;
       const elem = document.documentElement;
       if (elem.requestFullscreen) elem.requestFullscreen().catch(() => {});
       else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
-      fsOverlay.classList.add('hidden');
-    }
+      document.getElementById('fs-overlay').classList.add('hidden');
+    };
 
-    function declineFullscreen() {
+    window.declineFullscreen = function() {
       fsDeclined = true;
-      fsOverlay.classList.add('hidden');
-    }
+      document.getElementById('fs-overlay').classList.add('hidden');
+    };
 
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement && !fsDeclined) {
-        fsOverlay.classList.remove('hidden');
+        document.getElementById('fs-overlay').classList.remove('hidden');
       }
     });
 
@@ -159,7 +158,7 @@
     const topColor = document.getElementById('top-color');
     const bottomColor = document.getElementById('bottom-color');
 
-    function joinGame() {
+    window.joinGame = function() {
       myNickname = document.getElementById('nick-input').value.trim() || 'Игрок';
       currentRoom = document.getElementById('room-input').value.trim() || 'room1';
       
@@ -169,15 +168,15 @@
       
       renderBoard();
       initSocket();
-    }
+    };
 
-    function resetGame() {
+    window.resetGame = function() {
       game.reset();
       selectedSquare = null;
       renderBoard();
       updateStatus();
       if (socket && isConnected) socket.emit('resetGame', currentRoom);
-    }
+    };
 
     function initSocket() {
       socket = io();
@@ -239,13 +238,13 @@
     }
 
     function updateStatus() {
-      if (game.in_checkmate()) {
+      if (game.isCheckmate()) {
         statusBar.textContent = 'Мат! Игра окончена';
-      } else if (game.in_draw()) {
+      } else if (game.isDraw()) {
         statusBar.textContent = 'Ничья';
       } else {
         const turnName = game.turn() === 'w' ? 'Ход белых' : 'Ход черных';
-        statusBar.textContent = game.in_check() ? `${turnName} (Шах)` : turnName;
+        statusBar.textContent = game.isCheck() ? `${turnName} (Шах)` : turnName;
       }
     }
 
@@ -280,24 +279,26 @@
     }
 
     function handleSquareClick(square) {
-      if (playerColor === 'spectator' || game.game_over()) return;
+      if (playerColor === 'spectator' || game.isGameOver()) return;
       if (isConnected && game.turn() !== playerColor) return;
 
       if (selectedSquare) {
-        const moveObj = { from: selectedSquare, to: square, promotion: 'q' };
-        const moveAttempt = game.move(moveObj);
+        try {
+          const moveObj = { from: selectedSquare, to: square, promotion: 'q' };
+          const moveAttempt = game.move(moveObj);
 
-        if (moveAttempt) {
-          if (isConnected) {
-            game.undo();
-            socket.emit('makeMove', { roomId: currentRoom, move: moveObj });
-          } else {
-            updateStatus();
+          if (moveAttempt) {
+            if (isConnected) {
+              game.undo();
+              socket.emit('makeMove', { roomId: currentRoom, move: moveObj });
+            } else {
+              updateStatus();
+            }
+            selectedSquare = null;
+            renderBoard();
+            return;
           }
-          selectedSquare = null;
-          renderBoard();
-          return;
-        }
+        } catch (e) {}
       }
 
       const piece = game.get(square);
